@@ -1,4 +1,6 @@
-import hashlib,json,os,pathlib,subprocess,datetime
+import hashlib,json,os,pathlib,subprocess,datetime,sys
+sys.path.append('worker')
+from registry_loader import load_registry
 PREFERRED=['/generate','/chat','/predict','/respond','/infer','/run']
 
 def run(cmd,timeout=240):
@@ -57,14 +59,19 @@ def invoke(space,prompt):
     return False,'',{'errors':errors}
 
 role=os.environ['ROLE']; focus=os.environ.get('FOCUS',''); model=os.environ['MODEL']
-prompt=f'''You are {role} in CÉRÉBRON Ω FARM44 AI Platform Routing. Focus: {focus}. Analyze provider/model/tool routing with explicit criteria: capability evidence, availability, quota, cost, latency, safety, provenance, schema compatibility, fallback behavior, observability, and failure handling. Distinguish routing success from answer correctness. Produce concise findings, risks, tests, and unknowns. CLAIM<=EVIDENCE.'''
+registry_context,registry_meta=load_registry(['constitution','meta_core','disciplines','keys','banks'])
+prompt=f'''You are {role} in CÉRÉBRON Ω FARM44 AI Platform Routing. Focus: {focus}. Analyze provider/model/tool routing with explicit criteria: capability evidence, availability, quota, cost, latency, safety, provenance, schema compatibility, fallback behavior, observability, and failure handling. Distinguish routing success from answer correctness. Produce concise findings, risks, tests, and unknowns. CLAIM<=EVIDENCE.
+
+C42 SHARED CONTEXT — guidance only; not self-certifying evidence:
+{registry_context}'''
 ok,text,meta=invoke(model,prompt)
 out={
  'farm':44,'role':role,'focus':focus,'model':model,'provider':'huggingface-space',
  'inference_success':ok,'status':'UNREVIEWED_EXTERNAL_AGENT_OUTPUT' if ok else 'EXTERNAL_INFERENCE_FAILED',
  'api_name':meta.get('endpoint'),'output':text if ok else None,'error':None if ok else meta,
  'timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),
- 'output_sha256':meta.get('sha256') if ok else None
+ 'output_sha256':meta.get('sha256') if ok else None,
+ 'registry_runtime':registry_meta
 }
 pathlib.Path('results').mkdir(exist_ok=True)
 pathlib.Path(f'results/{role}.json').write_text(json.dumps(out,ensure_ascii=False,indent=2))
