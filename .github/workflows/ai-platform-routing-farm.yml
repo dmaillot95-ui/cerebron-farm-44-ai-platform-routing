@@ -1,0 +1,84 @@
+name: CEREBRON FARM44 AI Platform Routing
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'MISSION.md'
+      - 'worker/**'
+      - '.github/workflows/ai-platform-routing-farm.yml'
+permissions:
+  contents: read
+jobs:
+  agents:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {role: PROVIDER_REGISTRY_ARCHITECT, focus: provider registry and metadata, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: MODEL_CAPABILITY_ROUTER, focus: capability-evidence routing, model: huggingface-projects/gemma-2-9b-it}
+          - {role: CONNECTOR_ROUTER, focus: connector selection and boundaries, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: SCHEMA_DISCOVERY_ENGINEER, focus: dynamic schema discovery, model: huggingface-projects/gemma-2-9b-it}
+          - {role: AUTH_BOUNDARY_AUDITOR, focus: permissions and authentication boundaries, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: QUOTA_AWARE_ROUTER, focus: quota and capacity constraints, model: huggingface-projects/gemma-2-9b-it}
+          - {role: COST_AWARE_ROUTER, focus: cost-aware routing without capability loss, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: LATENCY_ROUTER, focus: latency-sensitive routing, model: huggingface-projects/gemma-2-9b-it}
+          - {role: AVAILABILITY_ROUTER, focus: provider availability and failover, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: FALLBACK_ENGINEER, focus: fallback chains and degradation semantics, model: huggingface-projects/gemma-2-9b-it}
+          - {role: RETRY_POLICY_AUDITOR, focus: retry backoff and failure classification, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: RATE_LIMIT_ENGINEER, focus: rate limiting and concurrency, model: huggingface-projects/gemma-2-9b-it}
+          - {role: PROVENANCE_ROUTER, focus: provenance preservation across providers, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: SAFETY_POLICY_ROUTER, focus: safety-policy-aware routing, model: huggingface-projects/gemma-2-9b-it}
+          - {role: TOOL_SELECTION_ENGINEER, focus: tool selection versus model generation, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: OBSERVABILITY_ENGINEER, focus: logs metrics traces and evidence, model: huggingface-projects/gemma-2-9b-it}
+          - {role: ROUTING_BENCHMARKER, focus: benchmark routing quality and tradeoffs, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: PLATFORM_FAILURE_AUDITOR, focus: failure taxonomy and recovery, model: huggingface-projects/gemma-2-9b-it}
+          - {role: ROUTING_RED_TEAM, focus: adversarial routing failures, model: huggingface-projects/llama-3.2-3B-Instruct}
+          - {role: OMEGA_PLATFORM_ROUTING_JUDGE, focus: evidence-based final routing audit, model: huggingface-projects/gemma-2-9b-it}
+    env:
+      ROLE: ${{ matrix.role }}
+      FOCUS: ${{ matrix.focus }}
+      MODEL: ${{ matrix.model }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -U hf-gradio
+      - run: python worker/agent.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: farm44-${{ matrix.role }}
+          path: results/${{ matrix.role }}.json
+          if-no-files-found: warn
+  omega:
+    if: always()
+    needs: agents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: farm44-*
+          path: packet
+          merge-multiple: true
+      - name: Build Omega packet
+        run: |
+          python - <<'PY'
+          import json,pathlib,datetime
+          rows=[]
+          for p in pathlib.Path('packet').glob('*.json'):
+              try: rows.append(json.loads(p.read_text()))
+              except Exception: pass
+          success=[r for r in rows if r.get('inference_success') is True and r.get('status')=='UNREVIEWED_EXTERNAL_AGENT_OUTPUT']
+          failed=[r for r in rows if not r.get('inference_success')]
+          packet={'farm':44,'returned_roles':len(rows),'verified_external_inference_successes':len(success),'failed_external_inferences':len(failed),'status':'UNREVIEWED_EXTERNAL_AGENT_OUTPUT','generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'rows':rows}
+          pathlib.Path('omega').mkdir(exist_ok=True)
+          pathlib.Path('omega/farm44-omega-packet.json').write_text(json.dumps(packet,indent=2,ensure_ascii=False))
+          print(json.dumps({k:v for k,v in packet.items() if k!='rows'},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-platform-routing-farm-44-omega-packet
+          path: omega/farm44-omega-packet.json
